@@ -1,0 +1,33 @@
+{
+  "name": "calzados-elegantes-desktop",
+  "version": "1.0.0",
+  "description": "Sistema de Gestión Calzados Elegantes - Aplicación de Escritorio",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --win"
+  },
+  "build": {
+    "appId": "bo.utepsa.calzados-elegantes",
+    "productName": "Calzados Elegantes",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "../frontend/dist/**"
+    ]
+  },
+  "dependencies": {
+    "electron": "^30.0.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.0.0"
+  }
+}
