@@ -63,7 +63,8 @@ router.post('/login', async (req: Request, res: Response) => {
   await registrarBitacora(user.id, username, 'Inicio de sesión', 'Seguridad', ip)
 
   const payload = { id: user.id, username: user.username, rol: user.roles.nombre, nombre: user.nombre, id_empleado: user.id_empleado ?? null }
-  const token = jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: process.env.JWT_EXPIRES_IN ?? '8h' })
+  // Cast necesario: @types/jsonwebtoken v9 exige StringValue, no string genérico
+  const token = jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: (process.env.JWT_EXPIRES_IN ?? '8h') as any })
 
   res.json({ token, user: payload })
 })
