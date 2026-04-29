@@ -111,41 +111,48 @@ router.post('/reservas', async (req: Request, res: Response) => {
 
 // PATCH /api/maquinaria/reservas/:id/devolucion
 router.patch('/reservas/:id/devolucion', async (req: Request, res: Response) => {
-  const { fecha_devolucion, observaciones } = req.body
+  const { fecha_devolucion, con_danio, descripcion_danio } = req.body
   if (!fecha_devolucion) {
-    res.status(400).json({ error: 'fecha_devolucion requerida' })
-    return
+    res.status(400).json({ error: 'fecha_devolucion requerida' }); return
   }
 
   // Validar que la fecha de devolución no sea anterior a hoy (evitar backdating)
   const hoy = new Date().toISOString().split('T')[0]
   if (fecha_devolucion < hoy) {
-    res.status(400).json({ error: `La fecha de devolución no puede ser anterior a hoy (${hoy})` })
-    return
+    res.status(400).json({ error: `La fecha de devolución no puede ser anterior a hoy (${hoy})` }); return
   }
 
   // Si es Empleado, verificar que la reserva le pertenece
   const esAdmin = req.user!.rol === 'Administrador'
   if (!esAdmin) {
     const { data: reserva } = await supabase
-      .from('reserva_maquina')
-      .select('id_empleado')
-      .eq('id', req.params.id)
-      .single()
+      .from('reserva_maquina').select('id_empleado').eq('id', req.params.id).single()
     if (reserva?.id_empleado !== req.user!.id_empleado) {
-      res.status(403).json({ error: 'Solo puede registrar devoluciones de sus propios préstamos' })
-      return
+      res.status(403).json({ error: 'Solo puede registrar devoluciones de sus propios préstamos' }); return
     }
   }
 
+  // Construir observaciones: si hay daño, prefijar la descripción
+  const observaciones = con_danio && descripcion_danio?.trim()
+    ? `[DAÑO REPORTADO]: ${descripcion_danio.trim()}`
+    : null
+
   const { data, error } = await supabase
     .from('reserva_maquina')
-    .update({ fecha_devolucion, observaciones })
+    .update({ fecha_devolucion, ...(observaciones !== null ? { observaciones } : {}) })
     .eq('id', req.params.id)
-    .select(`*, maquinas(codigo, nombre, valor), empleados(nombre, apellido), multa_reserva(*)`)
+    .select(`*, maquinas(id, codigo, nombre, valor), empleados(nombre, apellido), multa_reserva(*)`)
     .single()
 
   if (error) { res.status(400).json({ error: error.message }); return }
+
+  // Si hay daño, poner la máquina en fuera_de_servicio automáticamente
+  if (con_danio) {
+    await supabase.from('maquinas').update({ estado: 'fuera_de_servicio' }).eq('id', data.maquinas.id)
+    await log(req.user!.id, req.user!.username,
+      `Daño reportado en máquina ${data.maquinas.codigo}: ${descripcion_danio} — estado → fuera_de_servicio`,
+      'Maquinaria', req.ip ?? '')
+  }
 
   const multa = data.multa_reserva?.[0]
   const accion = multa

@@ -57,7 +57,7 @@ export interface ReservaMaquina {
   estado: string
   observaciones?: string
   fecha_creacion: string
-  maquinas: { codigo: string; nombre: string; valor: number }
+  maquinas: { id: number; codigo: string; nombre: string; valor: number }
   empleados: { nombre: string; apellido: string }
   multa_reserva?: MultaReserva[]
 }

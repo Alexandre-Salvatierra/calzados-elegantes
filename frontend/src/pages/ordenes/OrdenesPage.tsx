@@ -37,6 +37,12 @@ export default function OrdenesPage() {
   // Form cambio estado
   const [nuevoEstado, setNuevoEstado] = useState<EstadoOrden>('pendiente')
 
+  // Reasignar orden (RF-10)
+  const [showReasignarModal, setShowReasignarModal] = useState<Orden | null>(null)
+  const [nuevoEmpleado, setNuevoEmpleado] = useState('')
+  const [errReasignar, setErrReasignar] = useState('')
+  const [savingReasignar, setSavingReasignar] = useState(false)
+
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
@@ -71,6 +77,19 @@ export default function OrdenesPage() {
     await api.patch(`/ordenes/${showEstadoModal.id}/estado`, { estado: nuevoEstado })
     setShowEstadoModal(null)
     cargar()
+  }
+
+  async function reasignarOrden() {
+    if (!showReasignarModal) return
+    if (!nuevoEmpleado) { setErrReasignar('Seleccione un empleado'); return }
+    setSavingReasignar(true); setErrReasignar('')
+    try {
+      await api.patch(`/ordenes/${showReasignarModal.id}/reasignar`, { id_empleado: nuevoEmpleado })
+      setShowReasignarModal(null)
+      setNuevoEmpleado('')
+      cargar()
+    } catch (e: any) { setErrReasignar(e.response?.data?.error ?? 'Error al reasignar') }
+    finally { setSavingReasignar(false) }
   }
 
   const filtradas = ordenes.filter(o => {
@@ -143,10 +162,16 @@ export default function OrdenesPage() {
                   <td style={{ padding: '10px 14px', color: '#6B7A8D', fontSize: 12 }}>{new Date(o.fecha_creacion).toLocaleDateString('es-BO')}</td>
                   <td style={{ padding: '10px 14px' }}>
                     {isAdmin && o.estado !== 'terminada' && o.estado !== 'anulada' && (
-                      <button onClick={() => { setShowEstadoModal(o); setNuevoEstado(o.estado) }}
-                        style={{ padding: '4px 10px', borderRadius: 5, border: 'none', background: '#E8F2FB', color: '#2E75B6', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                        Cambiar estado
-                      </button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => { setShowEstadoModal(o); setNuevoEstado(o.estado) }}
+                          style={{ padding: '4px 10px', borderRadius: 5, border: 'none', background: '#E8F2FB', color: '#2E75B6', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                          Cambiar estado
+                        </button>
+                        <button onClick={() => { setShowReasignarModal(o); setNuevoEmpleado('') }}
+                          style={{ padding: '4px 10px', borderRadius: 5, border: 'none', background: '#F0FDF4', color: '#15803D', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                          Reasignar
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -202,7 +227,10 @@ export default function OrdenesPage() {
               <textarea value={form.observaciones} onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))} rows={3} style={{ ...inp, resize: 'vertical' }} />
             </div>
           </div>
-          {formErr && <div style={{ background: '#FEE2E2', color: '#B91C1C', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginTop: 12 }}>⚠ {formErr}</div>}
+          <div style={{ background: '#FEF9C3', border: '1px solid #FDE68A', borderRadius: 6, padding: '8px 12px', fontSize: 12, color: '#92400E', marginTop: 14 }}>
+            ⚠ Verificar disponibilidad de insumos antes de confirmar la orden. El administrador es responsable de asegurar que el stock sea suficiente.
+          </div>
+          {formErr && <div style={{ background: '#FEE2E2', color: '#B91C1C', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginTop: 8 }}>⚠ {formErr}</div>}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
             <button onClick={() => setShowModal(false)} style={{ padding: '9px 20px', borderRadius: 7, border: '1px solid #DDE3EC', background: '#fff', color: '#6B7A8D', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
             <button onClick={crearOrden} disabled={saving} style={{ padding: '9px 20px', borderRadius: 7, border: 'none', background: '#2E75B6', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Guardando…' : 'Registrar Orden'}</button>
@@ -211,6 +239,27 @@ export default function OrdenesPage() {
       )}
 
       {/* Modal cambio de estado */}
+      {/* Modal reasignar orden (RF-10) */}
+      {showReasignarModal && (
+        <Modal title={`Reasignar Orden — ${showReasignarModal.numero_orden}`} onClose={() => { setShowReasignarModal(null); setErrReasignar('') }} width={420}>
+          <p style={{ fontSize: 13, color: '#6B7A8D', marginBottom: 16 }}>
+            Empleado actual: <strong>{showReasignarModal.empleados.nombre} {showReasignarModal.empleados.apellido}</strong>
+          </p>
+          <label style={lbl}>Nuevo empleado *</label>
+          <select value={nuevoEmpleado} onChange={e => setNuevoEmpleado(e.target.value)} style={{ ...inp, cursor: 'pointer', marginBottom: 20 }}>
+            <option value="">Seleccionar…</option>
+            {empleados
+              .filter(e => e.id !== showReasignarModal.empleados.id)
+              .map(e => <option key={e.id} value={e.id}>{e.nombre} {e.apellido}</option>)}
+          </select>
+          {errReasignar && <div style={{ background: '#FEE2E2', color: '#B91C1C', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 12 }}>⚠ {errReasignar}</div>}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button onClick={() => { setShowReasignarModal(null); setErrReasignar('') }} style={{ padding: '9px 20px', borderRadius: 7, border: '1px solid #DDE3EC', background: '#fff', color: '#6B7A8D', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+            <button onClick={reasignarOrden} disabled={savingReasignar} style={{ padding: '9px 20px', borderRadius: 7, border: 'none', background: '#2E75B6', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{savingReasignar ? 'Reasignando…' : 'Confirmar Reasignación'}</button>
+          </div>
+        </Modal>
+      )}
+
       {showEstadoModal && (
         <Modal title={`Cambiar estado — ${showEstadoModal.numero_orden}`} onClose={() => setShowEstadoModal(null)} width={420}>
           <p style={{ fontSize: 13, color: '#6B7A8D', marginBottom: 14 }}>Estado actual: <Badge variant={estadoOrdenVariant(showEstadoModal.estado)}>{ESTADOS.find(s => s.v === showEstadoModal.estado)?.l}</Badge></p>

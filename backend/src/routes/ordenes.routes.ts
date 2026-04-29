@@ -78,6 +78,42 @@ router.patch('/:id/estado', requireAdmin, async (req: Request, res: Response) =>
   res.json(data)
 })
 
+// PATCH /api/ordenes/:id/reasignar  (RF-10)
+router.patch('/:id/reasignar', requireAdmin, async (req: Request, res: Response) => {
+  const { id_empleado } = req.body
+  if (!id_empleado) {
+    res.status(400).json({ error: 'id_empleado requerido' }); return
+  }
+
+  const { data: orden } = await supabase
+    .from('ordenes')
+    .select('numero_orden, empleados(nombre, apellido)')
+    .eq('id', req.params.id)
+    .single()
+
+  if (!orden) { res.status(404).json({ error: 'Orden no encontrada' }); return }
+
+  const { data: nuevoEmp } = await supabase
+    .from('empleados').select('nombre, apellido').eq('id', id_empleado).single()
+
+  const { data, error } = await supabase
+    .from('ordenes')
+    .update({ id_empleado })
+    .eq('id', req.params.id)
+    .select(`*, modelo_calzado(id, codigo, nombre), empleados(id, nombre, apellido)`)
+    .single()
+
+  if (error) { res.status(400).json({ error: error.message }); return }
+
+  const empAnterior = (orden.empleados as any)
+  await log(
+    req.user!.id, req.user!.username,
+    `Orden ${orden.numero_orden} reasignada de ${empAnterior.nombre} ${empAnterior.apellido} → ${nuevoEmp?.nombre} ${nuevoEmp?.apellido}`,
+    'Órdenes', req.ip ?? ''
+  )
+  res.json(data)
+})
+
 // GET /api/ordenes/catalogos/empleados
 router.get('/catalogos/empleados', async (_req: Request, res: Response) => {
   const { data } = await supabase.from('empleados').select('id, nombre, apellido').eq('activo', true).order('nombre')

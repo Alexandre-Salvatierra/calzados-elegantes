@@ -24,8 +24,16 @@ export default function MaquinariaPage() {
 
   const [prestForm, setPrestForm] = useState({ id_maquina: '', id_empleado: '', fecha_inicio: '', fecha_fin_estimada: '', observaciones: '' })
   const [fechaDev, setFechaDev] = useState('')
+  const [devConDanio, setDevConDanio] = useState(false)
+  const [devDescDanio, setDevDescDanio] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+
+  // Nueva máquina (UC-13)
+  const [showNuevaMaqModal, setShowNuevaMaqModal] = useState(false)
+  const [formMaq, setFormMaq] = useState({ codigo: '', nombre: '', descripcion: '', valor: '' })
+  const [savingMaq, setSavingMaq] = useState(false)
+  const [errMaq, setErrMaq] = useState('')
 
   useEffect(() => { cargar() }, [])
 
@@ -80,12 +88,36 @@ export default function MaquinariaPage() {
 
   async function registrarDevolucion() {
     if (!showDevModal || !fechaDev) { setErr('Ingrese la fecha de devolución'); return }
+    if (devConDanio && !devDescDanio.trim()) { setErr('Describa el daño observado'); return }
     setSaving(true); setErr('')
     try {
-      await api.patch(`/maquinaria/reservas/${showDevModal.id}/devolucion`, { fecha_devolucion: fechaDev })
-      setShowDevModal(null); setFechaDev(''); cargar()
+      await api.patch(`/maquinaria/reservas/${showDevModal.id}/devolucion`, {
+        fecha_devolucion: fechaDev,
+        con_danio: devConDanio,
+        descripcion_danio: devDescDanio,
+      })
+      setShowDevModal(null); setFechaDev(''); setDevConDanio(false); setDevDescDanio(''); cargar()
     } catch (e: any) { setErr(e.response?.data?.error ?? 'Error') }
     finally { setSaving(false) }
+  }
+
+  async function registrarNuevaMaquina() {
+    if (!formMaq.codigo.trim() || !formMaq.nombre.trim() || !formMaq.valor) {
+      setErrMaq('Complete los campos obligatorios'); return
+    }
+    setSavingMaq(true); setErrMaq('')
+    try {
+      await api.post('/maquinaria', {
+        codigo: formMaq.codigo.trim(),
+        nombre: formMaq.nombre.trim(),
+        descripcion: formMaq.descripcion.trim() || null,
+        valor: Number(formMaq.valor),
+      })
+      setShowNuevaMaqModal(false)
+      setFormMaq({ codigo: '', nombre: '', descripcion: '', valor: '' })
+      cargar()
+    } catch (e: any) { setErrMaq(e.response?.data?.error ?? 'Error al registrar') }
+    finally { setSavingMaq(false) }
   }
 
   const resumen = {
@@ -105,10 +137,18 @@ export default function MaquinariaPage() {
           <h1 style={{ fontSize: 20, fontWeight: 800, color: '#1C2B3A', margin: 0 }}>Gestión de Maquinaria</h1>
           <p style={{ color: '#6B7A8D', fontSize: 13, marginTop: 3 }}>RF-03 — Préstamos, devoluciones y multa 2%</p>
         </div>
-        <button onClick={() => { setShowPrestamoModal(true); setErr('') }}
-          style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: '#2E75B6', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-          + Solicitar Préstamo
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {isAdmin && tab === 'maquinas' && (
+            <button onClick={() => { setShowNuevaMaqModal(true); setErrMaq('') }}
+              style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid #2E75B6', background: '#fff', color: '#2E75B6', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              + Nueva Máquina
+            </button>
+          )}
+          <button onClick={() => { setShowPrestamoModal(true); setErr('') }}
+            style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: '#2E75B6', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            + Solicitar Préstamo
+          </button>
+        </div>
       </div>
 
       {/* Tarjetas resumen */}
@@ -172,9 +212,32 @@ export default function MaquinariaPage() {
                 </tbody>
               </table>
             ) : (
+              <>
+              {(() => {
+                const conRetrasos = reservas.filter(r => r.dias_retraso > 0)
+                const porEmpleado = conRetrasos.reduce((acc, r) => {
+                  const nombre = `${r.empleados.nombre} ${r.empleados.apellido}`
+                  acc[nombre] = (acc[nombre] || 0) + 1
+                  return acc
+                }, {} as Record<string, number>)
+                const entries = Object.entries(porEmpleado)
+                if (entries.length === 0) return null
+                return (
+                  <div style={{ margin: '0 0 16px 0', background: '#FFF5F5', border: '1px solid #FCA5A5', borderRadius: 8, padding: '12px 16px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#B91C1C', marginBottom: 10 }}>⚠ Empleados con retrasos registrados</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {entries.map(([nombre, count]) => (
+                        <span key={nombre} style={{ background: '#FEE2E2', color: '#B91C1C', borderRadius: 20, padding: '4px 12px', fontSize: 12, fontWeight: 600 }}>
+                          {nombre} — {count} retraso{count > 1 ? 's' : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
                 <thead><tr style={{ background: '#2E75B6' }}>
-                  {['Máquina','Empleado','F. Inicio','F. Estimada','F. Devolución','Días Retraso','Multa (BOB)','Estado','Acciones'].map((h, i) => (
+                  {['Máquina / Daño','Empleado','F. Inicio','F. Estimada','F. Devolución','Días Retraso','Multa (BOB)','Estado','Acciones'].map((h, i) => (
                     <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, fontSize: 12, color: '#fff', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr></thead>
@@ -182,9 +245,19 @@ export default function MaquinariaPage() {
                   {reservas.map((r, i) => {
                     const multa = r.multa_reserva?.[0]
                     const hayRetraso = r.dias_retraso > 0
+                    const hayDanio = r.observaciones?.startsWith('[DAÑO REPORTADO]')
+                    const descDanio = hayDanio ? r.observaciones!.replace('[DAÑO REPORTADO]: ', '') : null
                     return (
-                      <tr key={r.id} style={{ background: hayRetraso ? '#FFF5F5' : i % 2 === 0 ? '#fff' : '#F6F9FC' }}>
-                        <td style={{ padding: '10px 14px', fontWeight: 500 }}>{r.maquinas.nombre}</td>
+                      <tr key={r.id} style={{ background: hayDanio ? '#FFF5F5' : hayRetraso ? '#FFFBEB' : i % 2 === 0 ? '#fff' : '#F6F9FC' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 500 }}>
+                          {r.maquinas.nombre}
+                          {hayDanio && (
+                            <div style={{ fontSize: 11, color: '#B91C1C', fontWeight: 600, marginTop: 3, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                              <span>🔧</span>
+                              <span style={{ fontStyle: 'italic' }}>{descDanio}</span>
+                            </div>
+                          )}
+                        </td>
                         <td style={{ padding: '10px 14px' }}>{r.empleados.nombre} {r.empleados.apellido}</td>
                         <td style={{ padding: '10px 14px', fontSize: 12 }}>{r.fecha_inicio}</td>
                         <td style={{ padding: '10px 14px', fontSize: 12 }}>{r.fecha_fin_estimada}</td>
@@ -194,13 +267,13 @@ export default function MaquinariaPage() {
                           {multa ? Number(multa.monto_multa).toLocaleString('es-BO', { minimumFractionDigits: 2 }) : '—'}
                         </td>
                         <td style={{ padding: '10px 14px' }}>
-                          <Badge variant={r.estado === 'finalizada' ? 'ok' : r.dias_retraso > 0 ? 'err' : 'warn'}>
-                            {r.estado === 'finalizada' ? 'Devuelta' : r.dias_retraso > 0 ? 'Con retraso' : 'Activa'}
+                          <Badge variant={r.estado === 'finalizada' ? (hayDanio ? 'err' : 'ok') : r.dias_retraso > 0 ? 'err' : 'warn'}>
+                            {r.estado === 'finalizada' ? (hayDanio ? 'Devuelta c/daño' : 'Devuelta') : r.dias_retraso > 0 ? 'Con retraso' : 'Activa'}
                           </Badge>
                         </td>
                         <td style={{ padding: '10px 14px' }}>
                           {r.estado !== 'finalizada' && (
-                            <button onClick={() => { setShowDevModal(r); setErr('') }}
+                            <button onClick={() => { setShowDevModal(r); setFechaDev(''); setDevConDanio(false); setDevDescDanio(''); setErr('') }}
                               style={{ padding: '4px 10px', borderRadius: 5, border: 'none', background: '#E8F2FB', color: '#2E75B6', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                               Registrar devolución
                             </button>
@@ -212,9 +285,43 @@ export default function MaquinariaPage() {
                   {reservas.length === 0 && <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#6B7A8D' }}>Sin reservas registradas</td></tr>}
                 </tbody>
               </table>
+              </>
             )}
           </div>
         </div>
+      )}
+
+      {/* Modal nueva máquina (UC-13) */}
+      {showNuevaMaqModal && (
+        <Modal title="Registrar Nueva Máquina" onClose={() => setShowNuevaMaqModal(false)} width={480}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div>
+              <label style={lbl}>Código *</label>
+              <input type="text" placeholder="ej. MAQ-006" value={formMaq.codigo}
+                onChange={e => setFormMaq(f => ({ ...f, codigo: e.target.value }))} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Nombre *</label>
+              <input type="text" value={formMaq.nombre}
+                onChange={e => setFormMaq(f => ({ ...f, nombre: e.target.value }))} style={inp} />
+            </div>
+            <div style={{ gridColumn: '1/-1' }}>
+              <label style={lbl}>Descripción</label>
+              <textarea value={formMaq.descripcion} onChange={e => setFormMaq(f => ({ ...f, descripcion: e.target.value }))}
+                rows={2} style={{ ...inp, resize: 'vertical' }} />
+            </div>
+            <div style={{ gridColumn: '1/-1' }}>
+              <label style={lbl}>Valor BOB *</label>
+              <input type="number" min={0} placeholder="ej. 1500" value={formMaq.valor}
+                onChange={e => setFormMaq(f => ({ ...f, valor: e.target.value }))} style={inp} />
+            </div>
+          </div>
+          {errMaq && <div style={{ background: '#FEE2E2', color: '#B91C1C', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginTop: 12 }}>⚠ {errMaq}</div>}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+            <button onClick={() => setShowNuevaMaqModal(false)} style={{ padding: '9px 20px', borderRadius: 7, border: '1px solid #DDE3EC', background: '#fff', color: '#6B7A8D', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+            <button onClick={registrarNuevaMaquina} disabled={savingMaq} style={{ padding: '9px 20px', borderRadius: 7, border: 'none', background: '#2E75B6', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{savingMaq ? 'Registrando…' : 'Registrar Máquina'}</button>
+          </div>
+        </Modal>
       )}
 
       {/* Modal préstamo */}
@@ -230,6 +337,11 @@ export default function MaquinariaPage() {
                 <option value="">Seleccionar…</option>
                 {maquinas.filter(m => m.estado === 'disponible').map(m => <option key={m.id} value={m.id}>{m.codigo} — {m.nombre} (BOB {Number(m.valor).toLocaleString('es-BO')})</option>)}
               </select>
+              {maquinas.filter(m => m.estado === 'disponible').length === 0 && (
+                <div style={{ background: '#FEF9C3', border: '1px solid #FDE68A', borderRadius: 6, padding: '8px 12px', fontSize: 12, color: '#92400E', marginTop: 6 }}>
+                  ⚠ No hay máquinas disponibles. La solicitud queda en espera hasta que el administrador libere una máquina.
+                </div>
+              )}
             </div>
             {/* Selector de empleado: solo Admin puede elegir; Empleado ve su propio nombre */}
             <div style={{ gridColumn: '1/-1' }}>
@@ -274,11 +386,31 @@ export default function MaquinariaPage() {
             Las devoluciones tardías generarán automáticamente la multa del 2%.
           </p>
           <label style={lbl}>Fecha de devolución *</label>
-          <input type="date" value={fechaDev} min={new Date().toISOString().split('T')[0]} onChange={e => setFechaDev(e.target.value)} style={{ ...inp, marginBottom: 16 }} />
-          <p style={{ fontSize: 11, color: '#6B7A8D', marginTop: -10, marginBottom: 12 }}>
+          <input type="date" value={fechaDev} min={new Date().toISOString().split('T')[0]} onChange={e => setFechaDev(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
+          <p style={{ fontSize: 11, color: '#6B7A8D', marginTop: 0, marginBottom: 14 }}>
             Solo se permite registrar la fecha de hoy o posterior (no se pueden hacer devoluciones con fecha pasada).
           </p>
-          {err && <div style={{ background: '#FEE2E2', color: '#B91C1C', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 12 }}>⚠ {err}</div>}
+          <div style={{ marginTop: 14 }}>
+            <label style={lbl}>¿La máquina presenta daños?</label>
+            <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
+              {[{ v: false, l: 'No' }, { v: true, l: 'Sí — registrar daño' }].map(opt => (
+                <label key={String(opt.v)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                  <input type="radio" name="conDanio" checked={devConDanio === opt.v}
+                    onChange={() => setDevConDanio(opt.v)} />
+                  {opt.l}
+                </label>
+              ))}
+            </div>
+          </div>
+          {devConDanio && (
+            <div style={{ marginTop: 10 }}>
+              <label style={lbl}>Descripción del daño *</label>
+              <textarea value={devDescDanio} onChange={e => setDevDescDanio(e.target.value)}
+                rows={2} style={{ ...inp, resize: 'vertical', width: '100%' }}
+                placeholder="Describa el daño observado…" />
+            </div>
+          )}
+          {err && <div style={{ background: '#FEE2E2', color: '#B91C1C', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 12, marginTop: 12 }}>⚠ {err}</div>}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <button onClick={() => setShowDevModal(null)} style={{ padding: '9px 20px', borderRadius: 7, border: '1px solid #DDE3EC', background: '#fff', color: '#6B7A8D', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
             <button onClick={registrarDevolucion} disabled={saving} style={{ padding: '9px 20px', borderRadius: 7, border: 'none', background: '#2E75B6', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Registrando…' : 'Confirmar Devolución'}</button>
